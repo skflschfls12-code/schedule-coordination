@@ -585,7 +585,7 @@ const firebaseConfig = {
       + `<button type="button" class="act" data-del="${esc(c.id)}">${S.delArm === c.id ? '삭제할까요?' : '삭제'}</button>`
       + (c.memo ? `<span class="memo">${esc(c.memo)}</span>` : '') + '</li>';
     let h = up.length ? `<ul class="picks">${up.map((c) => item(c, false)).join('')}</ul>`
-      : '<p class="empty">아직 확정된 일정이 없어요. 아래 후보에서 "확정하기"를 누르거나 "+ 추가"로 직접 적어주세요. 이틀에 나눠 하면 날마다 하나씩 추가하면 돼요.</p>';
+      : '<p class="empty">아직 확정된 일정이 없어요. 아래 후보에서 "확정하기"를 누르거나 "+ 추가"로 추가해주시면 됩니당.</p>';
     if (past.length) h += `<p class="tier">지난 일정</p><ul class="picks">${past.map((c) => item(c, true)).join('')}</ul>`;
     $('conf-list').innerHTML = h;
   }
