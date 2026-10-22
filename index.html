@@ -1,0 +1,729 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>고정팟 시간표</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Do+Hyeon&family=IBM+Plex+Sans+KR:wght@400;500;700&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+/* Layout: one working sheet. Week grid on the left, "언제 되나" answers on the right; stacks on phones. */
+:root {
+  --bg: #f3f5f9; --surface: #ffffff; --cell: #eef1f6; --fg: #151a24; --muted: #5b6477;
+  --line: #dce1ea; --accent: #2a52e0; --accent-fg: #ffffff; --gold: #d99a00; --maybe: #8aa0f0;
+  --font-display: "Do Hyeon", "IBM Plex Sans KR", system-ui, sans-serif;
+  --font-body: "IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0e1118; --surface: #161a23; --cell: #1d222d; --fg: #e6e9f0; --muted: #8d95a8;
+  --line: #2a303d; --accent: #6d8bff; --accent-fg: #0b0e15; --gold: #f2b52a; --maybe: #4c5fa8; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #0e1118; --surface: #161a23; --cell: #1d222d; --fg: #e6e9f0; --muted: #8d95a8;
+  --line: #2a303d; --accent: #6d8bff; --accent-fg: #0b0e15; --gold: #f2b52a; --maybe: #4c5fa8; color-scheme: dark }
+
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 14px; line-height: 1.5; }
+.wrap { max-width: 1120px; margin: 0 auto; padding-block: 20px 48px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: flex; flex-direction: column; gap: 16px; }
+header { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px; }
+h1 { font-family: var(--font-display); font-weight: 400; font-size: 34px; line-height: 1.1; margin: 0; text-wrap: balance; }
+.sub { color: var(--muted); margin: 4px 0 0; }
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+button, input, select { font: inherit; color: inherit; }
+button { cursor: pointer; border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 6px 12px; }
+button:hover { border-color: var(--muted); }
+button:focus-visible, input:focus-visible, select:focus-visible, .cell:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); font-weight: 500; }
+input, select { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; min-width: 0; }
+
+.notice { border: 1px solid var(--line); background: var(--surface); border-radius: 10px; padding: 10px 14px; color: var(--muted); }
+.notice strong { color: var(--fg); }
+
+.main { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 20px; align-items: start; }
+@media (max-width: 860px) { .main { grid-template-columns: minmax(0, 1fr); } }
+
+.tabs { display: inline-flex; border: 1px solid var(--line); border-radius: 10px; padding: 3px; background: var(--surface); gap: 2px; }
+.tabs button { border: 0; border-radius: 7px; padding: 6px 14px; background: transparent; }
+.tabs button[aria-pressed="true"] { background: var(--accent); color: var(--accent-fg); }
+
+.toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; }
+.weeknav { display: flex; gap: 6px; align-items: center; }
+.weeknav .range { min-width: 108px; text-align: center; }
+
+.mine-bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.brush { display: inline-flex; gap: 6px; }
+.brush[hidden] { display: none; }
+.brush button[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.sw { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: -1px; margin-right: 6px; }
+.sw.yes { background: var(--accent); }
+.sw.maybe { background: repeating-linear-gradient(45deg, var(--maybe) 0 3px, var(--cell) 3px 6px); }
+.sw.no { background: var(--cell); border: 1px solid var(--line); }
+.save-state { color: var(--muted); font-size: 12px; }
+.dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; flex: none; }
+
+.whopick { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+.whopick button { display: inline-flex; align-items: center; gap: 6px; }
+.whopick button[aria-checked="true"] { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+.whopick.nudge { animation: nudge .4s; }
+@keyframes nudge { 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
+
+.sheet { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 10px; overflow-x: auto; }
+.grid { display: grid; grid-template-columns: 46px repeat(7, minmax(36px, 1fr)); gap: 2px; min-width: 320px; user-select: none; -webkit-user-select: none; }
+.grid.editing { touch-action: none; }
+.dh { text-align: center; padding: 4px 0 6px; font-size: 12px; color: var(--muted); line-height: 1.3; }
+.dh b { display: block; color: var(--fg); font-size: 14px; font-weight: 500; }
+.dh.sun b { color: #d9534f; } .dh.sat b { color: #3d6fd6; }
+.dh.today b { text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 2px; }
+.dh .cf { display: block; margin: 3px auto 0; width: fit-content; padding: 0 6px; border-radius: 4px; font-size: 11px; font-weight: 700; background: var(--fg); color: var(--bg); }
+.dh.hasconf b { font-weight: 700; }
+.tl { font-family: var(--font-mono); font-size: 11px; color: var(--muted); text-align: right; padding-right: 6px; line-height: 1; transform: translateY(-5px); }
+.tl.mid { color: var(--fg); }
+.cell { height: 20px; border-radius: 3px; background: var(--cell); position: relative; }
+.cell.midnight { box-shadow: 0 -2px 0 0 var(--muted); }
+.cell.yes { background: var(--accent); }
+.cell.maybe { background: repeating-linear-gradient(45deg, var(--maybe) 0 4px, var(--cell) 4px 8px); }
+.grid.group .cell { cursor: pointer; }
+.bars { position: absolute; inset: 2px; display: flex; gap: 1px; pointer-events: none; }
+.bars i { flex: 1; border-radius: 2px; }
+.bars i.on, .dot { box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--fg) 22%, transparent); }
+.cell.full { box-shadow: inset 0 0 0 2px var(--gold); }
+.cell.full .bars { inset: 3px; }
+.cell.conf { outline: 2px solid var(--fg); outline-offset: -1px; }
+.cell.conf::before { content: ""; position: absolute; left: -1px; right: -1px; top: -3px; height: 3px; background: var(--fg); z-index: 2; }
+.cell.conf.cstart::before { display: none; }
+.cell.sel { outline: 2px solid var(--fg); outline-offset: 1px; z-index: 1; }
+.legend { display: flex; flex-wrap: wrap; gap: 8px 14px; color: var(--muted); font-size: 12px; margin-top: 8px; align-items: center; }
+.legend > span { display: inline-flex; align-items: center; gap: 5px; }
+.ring { display: inline-block; width: 14px; height: 10px; border-radius: 2px; box-shadow: inset 0 0 0 2px var(--gold); background: var(--cell); }
+.cfdot { display: inline-block; width: 14px; height: 10px; border-radius: 2px; outline: 2px solid var(--fg); outline-offset: -1px; background: var(--cell); }
+.banner { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 12px 14px; border-radius: 12px; background: var(--fg); color: var(--bg); }
+.banner[hidden] { display: none; }
+.banner .lbl { font-family: var(--font-display); font-size: 20px; line-height: 1; margin-right: 6px; }
+.banner button { display: inline-flex; align-items: baseline; gap: 8px; flex-wrap: wrap; border: 1px solid color-mix(in oklab, var(--bg) 35%, transparent); background: transparent; color: var(--bg); border-radius: 10px; padding: 6px 12px; text-align: left; }
+.banner button:hover { border-color: var(--bg); }
+.banner .dd { font-family: var(--font-mono); font-size: 12px; padding: 0 6px; border-radius: 4px; background: var(--bg); color: var(--fg); }
+.banner .bt { font-weight: 700; font-size: 15px; }
+.banner .bm { font-size: 13px; opacity: .8; }
+
+aside { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+.panel h2 { font-size: 13px; letter-spacing: .04em; color: var(--muted); font-weight: 500; margin: 0; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.panel h2 button { font-size: 12px; padding: 3px 9px; }
+.panel.confirmed { border-color: var(--fg); }
+.panel.confirmed h2 { color: var(--fg); font-weight: 700; }
+.picks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.pick { display: grid; grid-template-columns: auto 1fr auto; gap: 2px 10px; align-items: center; padding: 8px 10px; border-radius: 8px; background: var(--cell); }
+.pick .d { font-weight: 700; }
+.pick .t { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.pick .c { font-family: var(--font-mono); font-size: 12px; color: var(--muted); }
+.pick .act { font-size: 12px; padding: 2px 8px; }
+.pick .note { grid-column: 1 / -1; font-size: 12px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
+.pick.best { box-shadow: inset 0 0 0 2px var(--gold); }
+.pick.conf { background: transparent; border: 1px solid var(--line); }
+.pick.conf .memo { grid-column: 1 / -1; font-size: 13px; }
+.pick.past { opacity: .55; }
+.empty { color: var(--muted); font-size: 13px; margin: 0; }
+.tier { font-size: 12px; color: var(--muted); margin: 4px 0 0; }
+
+.conf-form { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding-top: 4px; border-top: 1px dashed var(--line); }
+.conf-form[hidden] { display: none; }
+.conf-form .wide { grid-column: 1 / -1; }
+.conf-form label { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--muted); min-width: 0; }
+.conf-form .btns { grid-column: 1 / -1; display: flex; gap: 8px; justify-content: flex-end; }
+.linkbtn { border: 0; background: none; padding: 0; color: var(--muted); text-decoration: underline; text-underline-offset: 2px; font-size: 12px; }
+
+.who-list { display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.who-list .row { display: flex; gap: 8px; align-items: baseline; }
+.who-list .k { width: 34px; flex: none; color: var(--muted); font-size: 12px; }
+.chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.chip { display: inline-flex; align-items: center; gap: 5px; padding: 1px 8px 1px 6px; border-radius: 999px; background: var(--cell); font-size: 12px; }
+.chip.maybe .dot { background-image: repeating-linear-gradient(45deg, transparent 0 2px, var(--surface) 2px 4px); }
+.chip.no { color: var(--muted); }
+.chip.no .dot { opacity: .35; }
+
+.members { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.members li { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+.members li > span:first-child { display: inline-flex; align-items: center; gap: 6px; }
+.members .ago { color: var(--muted); font-size: 12px; }
+
+details.settings summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+.settings form { display: grid; grid-template-columns: auto 1fr; gap: 8px 10px; align-items: center; margin-top: 10px; }
+.settings form .full { grid-column: 1 / -1; display: flex; gap: 8px; justify-content: flex-end; }
+
+.swatches { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.swatch { width: 32px; height: 32px; border-radius: 50%; padding: 0; border: 2px solid var(--surface); box-shadow: 0 0 0 1px var(--line); }
+.swatch[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--fg); }
+.swatch.sys { background: linear-gradient(135deg, #f3f5f9 50%, #161a23 50%); }
+.swatches input[type="color"] { width: 40px; height: 32px; padding: 2px; cursor: pointer; }
+.subhead { font-size: 12px; color: var(--muted); margin: 4px 0 0; }
+
+.toast { position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--fg); color: var(--bg);
+  padding: 8px 16px; border-radius: 8px; font-size: 13px; z-index: 20; max-width: calc(100% - 32px); }
+@media (prefers-reduced-motion: reduce) { .whopick.nudge { animation: none; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1 id="title">고정팟 시간표</h1>
+      <p class="sub">각자 되는 시간을 칠해두면, 다 같이 되는 시간이 자동으로 나와요.</p>
+    </div>
+    <div class="tabs" role="group" aria-label="보기 전환">
+      <button type="button" id="tab-mine" aria-pressed="true">내 시간 입력</button>
+      <button type="button" id="tab-group" aria-pressed="false">모두 보기</button>
+    </div>
+  </header>
+
+  <div class="notice" id="notice" hidden></div>
+  <div class="banner" id="banner" hidden></div>
+
+  <div class="main">
+    <section style="display:flex;flex-direction:column;gap:12px;min-width:0">
+      <div class="toolbar">
+        <div class="mine-bar">
+          <span style="color:var(--muted)">나는</span>
+          <div class="whopick" id="who" role="radiogroup" aria-label="나는 누구"></div>
+          <div class="brush" id="brush" role="group" aria-label="칠할 상태">
+            <button type="button" id="brush-1" aria-pressed="true"><span class="sw yes"></span>가능</button>
+            <button type="button" id="brush-2" aria-pressed="false"><span class="sw maybe"></span>애매</button>
+          </div>
+          <span class="save-state" id="save-state"></span>
+        </div>
+        <div class="weeknav">
+          <button type="button" id="prev" aria-label="이전 7일">‹</button>
+          <button type="button" id="today">오늘</button>
+          <span class="range mono" id="range"></span>
+          <button type="button" id="next" aria-label="다음 7일">›</button>
+        </div>
+      </div>
+      <div class="sheet">
+        <div class="grid" id="grid"></div>
+      </div>
+      <div class="legend" id="legend"></div>
+    </section>
+
+    <aside>
+      <div class="panel confirmed">
+        <h2><span id="conf-title">확정 일정</span><button type="button" id="conf-open">+ 추가</button></h2>
+        <div id="conf-list"></div>
+        <form class="conf-form" id="conf-form" hidden>
+          <label class="wide">날짜<input type="date" id="cf-date" required></label>
+          <label>시작<select id="cf-start"></select></label>
+          <label>끝<select id="cf-end"></select></label>
+          <label class="wide">메모 (선택)<input id="cf-memo" maxlength="40" placeholder="예: 1일차, 1~2관문"></label>
+          <div class="btns">
+            <button type="button" id="cf-cancel">닫기</button>
+            <button type="submit" class="primary">확정</button>
+          </div>
+        </form>
+      </div>
+      <div class="panel">
+        <h2><span id="picks-title">다 같이 되는 시간</span><button type="button" id="copy">디코용 복사</button></h2>
+        <div id="picks"></div>
+      </div>
+      <div class="panel">
+        <h2><span id="detail-title">칸을 눌러 누가 되는지 보기</span></h2>
+        <div class="who-list" id="detail"><p class="empty">'모두 보기'에서 칸을 누르거나 마우스를 올리면 여기에 나와요.</p></div>
+      </div>
+      <div class="panel">
+        <h2><span>멤버 <span class="mono" id="mcount">0</span>명</span></h2>
+        <ul class="members" id="members"></ul>
+        <details class="settings">
+          <summary>파티 설정</summary>
+          <form id="settings-form">
+            <label for="s-need">필요 인원</label>
+            <select id="s-need"></select>
+            <label for="s-start">시작</label>
+            <select id="s-start"></select>
+            <label for="s-end">끝</label>
+            <select id="s-end"></select>
+            <div class="full"><button type="submit" class="primary">설정 저장</button></div>
+          </form>
+        </details>
+      </div>
+      <div class="panel">
+        <details class="settings">
+          <summary>내 화면 배경</summary>
+          <div class="swatches" id="themes" role="group" aria-label="배경색" style="margin-top:10px"></div>
+          <p class="subhead">배경은 나한테만 바뀌어요.</p>
+        </details>
+      </div>
+    </aside>
+  </div>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<!-- Firebase (실시간 공유 저장소) -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<script>
+/* ================== 여기만 고치면 돼요 ================== */
+const CONFIG = {
+  partyName: "탈냐가흐",
+  partyId: "reta-party-7k2q",       // 링크 모르는 사람이 못 찾게 아무 영문·숫자 조합
+  members: ["냐냐", "이놀", "레타"],  // 팟원 이름 (중간에 순서 바꾸지 말고, 추가는 맨 뒤에)
+  colors:  ["#FFE8B6", "#C9B8F0", "#FFB5C1"], // 멤버 색 (위 이름과 같은 순서, #RRGGBB)
+  startHour: 18,                    // 기본 시작 시각 (사이트의 '파티 설정'에서 바꿀 수 있어요)
+  endHour: 26,                      // 26 = 새벽 2시 (최대 30 = 새벽 6시)
+  weekStart: 4,                     // 한 주 시작 요일 (0=일 1=월 2=화 3=수 4=목 5=금 6=토)
+};
+
+const firebaseConfig = {
+  apiKey: "AIzaSyA94l3rAVV11QVapzwfxkQac7Zpe8B6hSs",
+  authDomain: "talnyagahu.firebaseapp.com",
+  databaseURL: "https://talnyagahu-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "talnyagahu",
+  storageBucket: "talnyagahu.firebasestorage.app",
+  messagingSenderId: "39389368957",
+  appId: "1:39389368957:web:cc670d431a0746556ed714"
+};
+/* ======================================================= */
+
+(() => {
+  const DOW = ['일', '월', '화', '수', '목', '금', '토'];
+  const SLOT_LEN = 60; // half-hour slots from 00:00 of the day to 06:00 of the next day
+  const ME_KEY = 'partyplan-grid-me-' + CONFIG.partyId;
+  const THEME_KEY = 'partyplan-theme-' + CONFIG.partyId;
+  const MCOLORS = ['#14958a', '#7556d3', '#e0782a', '#d6487a', '#3a7bd5', '#8f9a1a', '#b5523b', '#5e6d82'];
+  const BGS = [
+    { name: '하늘', bg: '#eaf2fb' }, { name: '벚꽃', bg: '#fbeef2' }, { name: '민트', bg: '#e8f6f0' },
+    { name: '라벤더', bg: '#f1edfb' }, { name: '레몬', bg: '#fbf5df' },
+    { name: '밤하늘', bg: '#121726' }, { name: '숲', bg: '#0f1f19' }, { name: '먹', bg: '#111113' },
+  ];
+  const $ = (id) => document.getElementById(id);
+
+  const S = {
+    tab: 'mine', brush: 1,
+    view: weekOf(today0()),
+    me: null,               // index into CONFIG.members
+    data: {},               // "m0" -> {slots, updatedAt}
+    themes: null,           // "m0" -> {bg}
+    confirmed: {},          // pushId -> {date, start, end, memo}
+    bg: null,
+    settings: { need: 0, startH: CONFIG.startHour, endH: CONFIG.endHour },
+    root: null, sel: null, drag: null, delArm: null,
+  };
+  try { const v = localStorage.getItem(ME_KEY); if (v !== null && CONFIG.members[+v] !== undefined) S.me = +v; } catch {}
+  try { const t = JSON.parse(localStorage.getItem(THEME_KEY)); if (t && t.bg) S.bg = t.bg; } catch {}
+
+  function today0() { const d = new Date(); if (d.getHours() < 4) d.setDate(d.getDate() - 1); d.setHours(0, 0, 0, 0); return d; }
+  function weekOf(d) { return addDays(d, -((d.getDay() - (CONFIG.weekStart ?? 4) + 7) % 7)); }
+  function weekConfs() { const a = keyOf(S.view), b = keyOf(addDays(S.view, 7)); return confList().filter((c) => c.date >= a && c.date < b); }
+  function addDays(d, n) { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
+  function keyOf(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+  function parseKey(k) { const [y, m, d] = k.split('-').map(Number); return new Date(y, m - 1, d); }
+  function days() { return Array.from({ length: 7 }, (_, i) => addDays(S.view, i)); }
+  function slotRange() { const a = S.settings.startH * 2, b = S.settings.endH * 2; return Array.from({ length: b - a }, (_, i) => a + i); }
+  function hhmm(i) { return String(Math.floor(i / 2) % 24).padStart(2, '0') + ':' + (i % 2 ? '30' : '00'); }
+  function md(d) { return (d.getMonth() + 1) + '/' + d.getDate() + '(' + DOW[d.getDay()] + ')'; }
+  function val(slots, key, i) { return +((slots && slots[key] || '')[i] || 0); }
+  function esc(s) { return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+  function toast(msg) { const t = $('toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => t.hidden = true, 2000); }
+  function colorOf(m) { const c = (CONFIG.colors || [])[m]; return /^#[0-9a-f]{6}$/i.test(c || '') ? c : MCOLORS[m % MCOLORS.length]; }
+  function dotHtml(m) { return `<i class="dot" style="background-color:${colorOf(m)}"></i>`; }
+
+  function mySlots() { return (S.data['m' + S.me] && S.data['m' + S.me].slots) || {}; }
+  function roster() {
+    return CONFIG.members.map((nick, m) => {
+      const d = S.data['m' + m] || {};
+      return { id: m, nick, slots: d.slots || {}, updatedAt: d.updatedAt };
+    });
+  }
+  function need(total) { const n = +S.settings.need || 0; return n > 0 ? Math.min(n, total) : total; }
+  function confList() {
+    return Object.entries(S.confirmed || {}).map(([id, c]) => ({ id, ...c }))
+      .filter((c) => c && typeof c.date === 'string')
+      .sort((a, b) => (a.date + String(a.start).padStart(2, '0')).localeCompare(b.date + String(b.start).padStart(2, '0')));
+  }
+  function isConf(k, i) { return confList().some((c) => c.date === k && i >= c.start && i < c.end); }
+
+  // ---------- colors ----------
+  function lum(hex) {
+    const n = parseInt(hex.slice(1), 16), c = [n >> 16, (n >> 8) & 255, n & 255].map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; });
+    return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+  }
+  const THEME_VARS = ['--bg', '--surface', '--cell', '--fg', '--muted', '--line', '--accent', '--accent-fg', '--maybe'];
+  function applyColors() {
+    const st = document.documentElement.style, v = {};
+    THEME_VARS.forEach((k) => st.removeProperty(k)); st.removeProperty('color-scheme');
+    let surface = 'var(--surface)';
+    if (S.bg) {
+      const dark = lum(S.bg) < 0.18, fg = dark ? '#eef0f6' : '#151a24';
+      surface = dark ? `color-mix(in oklab, #ffffff 7%, ${S.bg})` : `color-mix(in oklab, #ffffff 70%, ${S.bg})`;
+      Object.assign(v, {
+        '--bg': S.bg, '--surface': surface, '--fg': fg,
+        '--cell': `color-mix(in oklab, ${fg} ${dark ? 9 : 7}%, ${surface})`,
+        '--line': `color-mix(in oklab, ${fg} 15%, ${surface})`,
+        '--muted': `color-mix(in oklab, ${fg} 58%, ${S.bg})`,
+      });
+      st.setProperty('color-scheme', dark ? 'dark' : 'light');
+    }
+    if (S.me !== null) {
+      const a = colorOf(S.me);
+      Object.assign(v, { '--accent': a, '--accent-fg': lum(a) > 0.4 ? '#151a24' : '#ffffff', '--maybe': a });
+    }
+    Object.entries(v).forEach(([k, x]) => st.setProperty(k, x));
+  }
+  function renderColorPickers() {
+    $('themes').innerHTML = `<button type="button" class="swatch sys" data-bg="" aria-pressed="${!S.bg}" title="기본 (기기 설정 따라감)" aria-label="기본"></button>`
+      + BGS.map((b) => `<button type="button" class="swatch" data-bg="${b.bg}" aria-pressed="${S.bg === b.bg}" title="${b.name}" aria-label="${b.name}" style="background:${b.bg}"></button>`).join('')
+      + `<input type="color" id="bg-custom" aria-label="직접 고르기" value="${S.bg || '#f3f5f9'}">`;
+  }
+  function setBg(bg) {
+    S.bg = bg || null;
+    try { S.bg ? localStorage.setItem(THEME_KEY, JSON.stringify({ bg: S.bg })) : localStorage.removeItem(THEME_KEY); } catch {}
+    applyColors(); renderColorPickers();
+    if (S.me !== null && S.root) S.root.child('themes/m' + S.me).set(S.bg ? { bg: S.bg } : null).catch(() => {});
+  }
+  $('themes').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) setBg(b.dataset.bg); });
+  $('themes').addEventListener('change', (e) => { if (e.target.id === 'bg-custom') setBg(e.target.value); });
+
+  // ---------- grid ----------
+  function renderGrid() {
+    const g = $('grid'), ds = days(), rows = slotRange(), t0 = keyOf(today0());
+    const editing = S.tab === 'mine';
+    g.className = 'grid ' + (editing ? 'editing' : 'group');
+    const people = roster(), total = people.length, nd = need(total), confs = confList();
+    let h = '<div></div>';
+    ds.forEach((d) => {
+      const k = keyOf(d);
+      const dc = confs.filter((c) => c.date === k);
+      const cls = ['dh', d.getDay() === 0 ? 'sun' : '', d.getDay() === 6 ? 'sat' : '', k === t0 ? 'today' : '', dc.length ? 'hasconf' : ''].join(' ');
+      h += `<div class="${cls}"><b>${d.getDate()}</b>${DOW[d.getDay()]}${dc.length ? `<span class="cf">📌${hhmm(dc[0].start)}</span>` : ''}</div>`;
+    });
+    const mine = S.drag ? S.drag.preview : mySlots();
+    rows.forEach((i) => {
+      const mid = i % 48 === 0 && i > 0;
+      h += `<div class="tl${mid ? ' mid' : ''}">${i % 2 ? '' : (mid ? '자정' : hhmm(i))}</div>`;
+      ds.forEach((d, di) => {
+        const k = keyOf(d);
+        let cls = 'cell' + (mid ? ' midnight' : ''), inner = '';
+        const cf = confs.find((c) => c.date === k && i >= c.start && i < c.end);
+        if (cf) cls += ' conf' + (i === cf.start || i === S.settings.startH * 2 ? ' cstart' : '');
+        if (editing) {
+          const v = S.me === null ? 0 : val(mine, k, i);
+          if (v === 1) cls += ' yes'; else if (v === 2) cls += ' maybe';
+        } else {
+          let y = 0;
+          const bars = people.map((p) => {
+            const v = val(p.slots, k, i), c = colorOf(p.id);
+            if (v === 1) { y++; return `<i class="on" style="background:${c}"></i>`; }
+            if (v === 2) return `<i class="on" style="background:repeating-linear-gradient(45deg, ${c} 0 2px, transparent 2px 4px)"></i>`;
+            return '<i></i>';
+          }).join('');
+          if (y >= nd) cls += ' full';
+          inner = `<span class="bars">${bars}</span>`;
+          if (S.sel && S.sel.k === k && S.sel.i === i) cls += ' sel';
+        }
+        h += `<div class="${cls}" data-d="${di}" data-i="${i}" ${editing ? '' : 'tabindex="0" role="button"'} aria-label="${md(d)} ${hhmm(i)}">${inner}</div>`;
+      });
+    });
+    g.innerHTML = h;
+    const r0 = ds[0], r1 = ds[6];
+    $('range').textContent = `${r0.getMonth() + 1}.${r0.getDate()} – ${r1.getMonth() + 1}.${r1.getDate()}`;
+    renderLegend(nd);
+  }
+
+  function renderLegend(nd) {
+    const L = $('legend'), cf = '<span><i class="cfdot"></i>확정 일정</span>';
+    if (S.tab === 'mine') {
+      L.innerHTML = '<span><i class="sw yes"></i>가능</span><span><i class="sw maybe"></i>애매 (되면 참여)</span><span><i class="sw no"></i>불가</span>' + cf + '<span>칸을 누르거나 드래그해서 칠해요. 같은 상태를 다시 칠하면 지워져요.</span>';
+    } else {
+      L.innerHTML = CONFIG.members.map((n, m) => `<span>${dotHtml(m)}${esc(n)}</span>`).join('')
+        + `<span>줄무늬: 애매</span><span><i class="ring"></i>${nd}명 이상 가능</span>` + cf;
+    }
+  }
+
+  function cellAt(x, y) {
+    const el = document.elementFromPoint(x, y);
+    return el && el.classList && el.classList.contains('cell') ? el : null;
+  }
+  function applyRect(a, b) {
+    const ds = days(), out = { ...mySlots() };
+    const d0 = Math.min(a.d, b.d), d1 = Math.max(a.d, b.d), i0 = Math.min(a.i, b.i), i1 = Math.max(a.i, b.i);
+    for (let d = d0; d <= d1; d++) {
+      const k = keyOf(ds[d]);
+      const arr = (out[k] || '').padEnd(SLOT_LEN, '0').split('');
+      for (let i = i0; i <= i1; i++) arr[i] = String(S.drag.target);
+      const s = arr.join('').replace(/0+$/, '');
+      if (s) out[k] = s; else delete out[k];
+    }
+    return out;
+  }
+
+  $('grid').addEventListener('pointerdown', (e) => {
+    const c = e.target.closest('.cell'); if (!c) return;
+    const d = +c.dataset.d, i = +c.dataset.i;
+    if (S.tab !== 'mine') { select(keyOf(days()[d]), i); return; }
+    if (S.me === null) { needMe(); return; }
+    if (!S.root) { toast('저장소에 연결되지 않아서 저장할 수 없어요.'); return; }
+    e.preventDefault();
+    const cur = val(mySlots(), keyOf(days()[d]), i);
+    S.drag = { a: { d, i }, target: cur === S.brush ? 0 : S.brush };
+    S.drag.preview = applyRect(S.drag.a, S.drag.a);
+    try { $('grid').setPointerCapture(e.pointerId); } catch {}
+    renderGrid();
+  });
+  $('grid').addEventListener('pointermove', (e) => {
+    if (S.drag) {
+      const c = cellAt(e.clientX, e.clientY); if (!c) return;
+      const b = { d: +c.dataset.d, i: +c.dataset.i };
+      if (S.drag.b && S.drag.b.d === b.d && S.drag.b.i === b.i) return;
+      S.drag.b = b; S.drag.preview = applyRect(S.drag.a, b); renderGrid();
+    } else if (S.tab === 'group' && e.pointerType === 'mouse') {
+      const c = e.target.closest('.cell'); if (c) select(keyOf(days()[+c.dataset.d]), +c.dataset.i, true);
+    }
+  });
+  function endDrag() {
+    if (!S.drag) return;
+    const slots = S.drag.preview; S.drag = null;
+    S.data['m' + S.me] = { ...(S.data['m' + S.me] || {}), slots };
+    renderAll(); saveMine(slots);
+  }
+  $('grid').addEventListener('pointerup', endDrag);
+  $('grid').addEventListener('pointercancel', endDrag);
+  $('grid').addEventListener('keydown', (e) => {
+    if ((e.key === 'Enter' || e.key === ' ') && e.target.classList.contains('cell')) { e.preventDefault(); select(keyOf(days()[+e.target.dataset.d]), +e.target.dataset.i); }
+  });
+
+  function select(k, i, soft) {
+    if (soft && S.sel && S.sel.k === k && S.sel.i === i) return;
+    S.sel = { k, i }; renderGrid(); renderDetail();
+  }
+
+  function needMe() {
+    const w = $('who'); w.classList.remove('nudge'); void w.offsetWidth; w.classList.add('nudge');
+    toast('먼저 "나는"에서 내 이름을 골라주세요');
+  }
+
+  // ---------- side panels ----------
+  function renderWho() {
+    $('who').innerHTML = CONFIG.members.map((n, m) => `<button type="button" role="radio" aria-checked="${S.me === m}" data-m="${m}">${dotHtml(m)}${esc(n)}</button>`).join('');
+  }
+  $('who').addEventListener('click', (e) => {
+    const b = e.target.closest('button'); if (!b) return;
+    S.me = +b.dataset.m;
+    try { localStorage.setItem(ME_KEY, S.me); } catch {}
+    if (S.themes) { const t = S.themes['m' + S.me]; S.bg = (t && t.bg) || null; try { S.bg ? localStorage.setItem(THEME_KEY, JSON.stringify({ bg: S.bg })) : localStorage.removeItem(THEME_KEY); } catch {} }
+    applyColors(); renderAll();
+  });
+
+  function renderDetail() {
+    if (!S.sel) return;
+    $('detail-title').textContent = `${md(parseKey(S.sel.k))} ${hhmm(S.sel.i)}–${hhmm(S.sel.i + 1)}`;
+    const g = { 1: [], 2: [], 0: [] };
+    roster().forEach((p) => g[val(p.slots, S.sel.k, S.sel.i)].push(p));
+    const row = (lbl, arr, cls) => `<div class="row"><span class="k">${lbl}</span><div class="chips">${arr.length ? arr.map((p) => `<span class="chip ${cls}">${dotHtml(p.id)}${esc(p.nick)}</span>`).join('') : '<span class="empty">없음</span>'}</div></div>`;
+    $('detail').innerHTML = row('가능', g[1], 'yes') + row('애매', g[2], 'maybe') + row('불가', g[0], 'no');
+  }
+
+  function findRuns() {
+    const people = roster(), total = people.length, nd = need(total), rows = slotRange();
+    const sure = [], soft = [];
+    const t0 = today0();
+    days().filter((d) => d >= t0).forEach((d) => {
+      const k = keyOf(d);
+      const yes = (i) => people.filter((p) => val(p.slots, k, i) === 1).length;
+      const yesMaybe = (i) => people.filter((p) => val(p.slots, k, i) > 0).length;
+      const scan = (ok, out) => {
+        let start = null;
+        rows.concat([null]).forEach((i) => {
+          if (i !== null && ok(i)) { if (start === null) start = i; }
+          else if (start !== null) {
+            const end = i === null ? rows[rows.length - 1] + 1 : i;
+            if (end - start >= 2) {
+              const inAll = people.filter((p) => { for (let j = start; j < end; j++) if (val(p.slots, k, j) !== 1) return false; return true; });
+              out.push({ d, k, start, end, inAll });
+            }
+            start = null;
+          }
+        });
+      };
+      scan((i) => yes(i) >= nd, sure);
+      scan((i) => yes(i) < nd && yesMaybe(i) >= nd, soft);
+    });
+    return { sure, soft, nd, total };
+  }
+
+  function renderPicks() {
+    const { sure, soft, nd, total } = findRuns();
+    $('picks-title').textContent = nd < total ? `${nd}명 이상 되는 시간` : '다 같이 되는 시간';
+    const item = (r, idx, best, tier) => {
+      const hrs = (r.end - r.start) / 2;
+      const who = nd < total ? `<span class="note">끝까지 가능: ${r.inAll.map((p) => `<span class="chip">${dotHtml(p.id)}${esc(p.nick)}</span>`).join('') || '-'}</span>` : '';
+      return `<li class="pick${best ? ' best' : ''}"><span class="d">${md(r.d)}</span><span class="t">${hhmm(r.start)}–${hhmm(r.end)} <span class="c">${hrs}h</span></span><button type="button" class="act" data-tier="${tier}" data-idx="${idx}">확정하기</button>${who}</li>`;
+    };
+    const longest = sure.reduce((a, r) => (!a || r.end - r.start > a.end - a.start ? r : a), null);
+    let h = sure.length ? `<ul class="picks">${sure.map((r, i) => item(r, i, r === longest, 'sure')).join('')}</ul>`
+      : '<p class="empty">이 주 남은 날 중에는 확정으로 다 되는 1시간 이상 구간이 아직 없어요. 각자 되는 시간을 칠해주세요.</p>';
+    if (soft.length) h += `<p class="tier">'애매'까지 포함하면 되는 시간</p><ul class="picks">${soft.map((r, i) => item(r, i, false, 'soft')).join('')}</ul>`;
+    $('picks').innerHTML = h;
+    S.lastRuns = { sure, soft, nd, total };
+  }
+  $('picks').addEventListener('click', (e) => {
+    const b = e.target.closest('button.act'); if (!b) return;
+    const r = S.lastRuns[b.dataset.tier][+b.dataset.idx];
+    openConfForm({ date: r.k, start: r.start, end: r.end });
+  });
+
+  // ---------- confirmed schedule ----------
+  function renderBanner() {
+    const t0 = today0(), up = weekConfs(), b = $('banner');
+    b.hidden = !up.length;
+    if (!up.length) return;
+    const dday = (k) => { const n = Math.round((parseKey(k) - t0) / 864e5); return n < 0 ? '지남' : n === 0 ? '오늘' : n === 1 ? '내일' : 'D-' + n; };
+    b.innerHTML = '<span class="lbl">📌 확정</span>' + up.map((c) => `<button type="button" data-date="${c.date}"><span class="dd">${dday(c.date)}</span><span class="bt">${md(parseKey(c.date))} ${hhmm(c.start)}–${hhmm(c.end)}</span>${c.memo ? `<span class="bm">${esc(c.memo)}</span>` : ''}</button>`).join('');
+  }
+  $('banner').addEventListener('click', (e) => {
+    const btn = e.target.closest('button'); if (!btn) return;
+    S.view = weekOf(parseKey(btn.dataset.date)); S.tab = 'group'; renderAll();
+    $('grid').scrollIntoView({ block: 'nearest' });
+  });
+  const slotOpts = Array.from({ length: SLOT_LEN + 1 }, (_, i) => `<option value="${i}">${i >= 48 ? '다음날 ' : ''}${hhmm(i)}</option>`).join('');
+  $('cf-start').innerHTML = slotOpts; $('cf-end').innerHTML = slotOpts;
+  function openConfForm(pre) {
+    const f = $('conf-form');
+    const t0 = today0(), inWeek = t0 >= S.view && t0 < addDays(S.view, 7);
+    $('cf-date').value = pre.date || keyOf(inWeek ? t0 : S.view);
+    $('cf-start').value = pre.start ?? S.settings.startH * 2;
+    $('cf-end').value = pre.end ?? Math.min(SLOT_LEN, S.settings.startH * 2 + 4);
+    $('cf-memo').value = '';
+    f.hidden = false;
+    $('cf-memo').focus();
+  }
+  $('conf-open').onclick = () => { if ($('conf-form').hidden) openConfForm({}); else $('conf-form').hidden = true; };
+  $('cf-cancel').onclick = () => { $('conf-form').hidden = true; };
+  $('conf-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const date = $('cf-date').value, start = +$('cf-start').value, end = +$('cf-end').value, memo = $('cf-memo').value.trim().slice(0, 40);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { toast('날짜를 골라주세요.'); return; }
+    if (end <= start) { toast('끝 시간은 시작보다 뒤여야 해요.'); return; }
+    if (!S.root) { toast('저장소에 연결되지 않아서 저장할 수 없어요.'); return; }
+    const entry = { date, start, end, memo, by: S.me === null ? '' : CONFIG.members[S.me], createdAt: Date.now() };
+    S.root.child('confirmed').push(entry).then(() => {
+      toast(`${md(parseKey(date))} ${hhmm(start)}–${hhmm(end)} 확정했어요. 다른 날도 이어서 추가할 수 있어요.`);
+      $('cf-memo').value = '';
+      $('cf-date').value = keyOf(addDays(parseKey(date), 1));
+    }, () => toast('확정 저장에 실패했어요.'));
+  });
+  function renderConfirmed() {
+    const t0 = keyOf(today0()), list = weekConfs(), e = addDays(S.view, 6);
+    $('conf-title').textContent = `확정 일정 · ${S.view.getMonth() + 1}/${S.view.getDate()}–${e.getMonth() + 1}/${e.getDate()}`;
+    const item = (c, isPast) => `<li class="pick conf${isPast ? ' past' : ''}"><span class="d">${md(parseKey(c.date))}</span><span class="t">${hhmm(c.start)}–${hhmm(c.end)}</span>`
+      + `<button type="button" class="act" data-del="${esc(c.id)}">${S.delArm === c.id ? '삭제할까요?' : '삭제'}</button>`
+      + (c.memo ? `<span class="memo">${esc(c.memo)}</span>` : '') + '</li>';
+    const h = list.length ? `<ul class="picks">${list.map((c) => item(c, c.date < t0)).join('')}</ul>`
+      : '<p class="empty">이 주에는 아직 확정된 일정이 없어요. 아래 후보에서 "확정하기"를 누르거나 "+ 추가"로 직접 적어주세요. 이틀에 나눠 하면 날마다 하나씩 추가하면 돼요.</p>';
+    $('conf-list').innerHTML = h;
+  }
+  $('conf-list').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-del]'); if (!b) return;
+    const id = b.dataset.del;
+    if (S.delArm !== id) { S.delArm = id; renderConfirmed(); clearTimeout(S.delT); S.delT = setTimeout(() => { S.delArm = null; renderConfirmed(); }, 4000); return; }
+    S.delArm = null;
+    if (S.root) S.root.child('confirmed/' + id).remove().then(() => toast('확정 일정을 지웠어요.'), () => toast('삭제에 실패했어요.'));
+  });
+
+  function renderMembers() {
+    const people = roster();
+    $('mcount').textContent = people.length;
+    const ago = (t) => { if (!t) return '아직 입력 안 함'; const m = Math.round((Date.now() - t) / 60000); return m < 1 ? '방금' : m < 60 ? m + '분 전' : m < 1440 ? Math.round(m / 60) + '시간 전' : Math.round(m / 1440) + '일 전'; };
+    $('members').innerHTML = people.map((p) => `<li><span>${dotHtml(p.id)}${esc(p.nick)}${p.id === S.me ? ' <span class="ago">(나)</span>' : ''}</span><span class="ago">${ago(p.updatedAt)}</span></li>`).join('');
+    const sel = $('s-need');
+    if (!sel.options.length) {
+      let o = '<option value="0">전원</option>';
+      for (let n = 2; n < people.length; n++) o += `<option value="${n}">${n}명</option>`;
+      sel.innerHTML = o;
+    }
+    if (document.activeElement !== sel) sel.value = String(S.settings.need || 0);
+  }
+
+  function renderAll() {
+    $('tab-mine').setAttribute('aria-pressed', S.tab === 'mine');
+    $('tab-group').setAttribute('aria-pressed', S.tab === 'group');
+    $('brush').hidden = S.tab !== 'mine';
+    renderWho(); renderBanner(); renderGrid(); renderConfirmed(); renderPicks(); renderMembers(); renderDetail(); renderColorPickers();
+  }
+
+  // ---------- controls ----------
+  $('tab-mine').onclick = () => { S.tab = 'mine'; renderAll(); };
+  $('tab-group').onclick = () => { S.tab = 'group'; renderAll(); };
+  [1, 2].forEach((b) => $('brush-' + b).onclick = () => { S.brush = b; $('brush-1').setAttribute('aria-pressed', b === 1); $('brush-2').setAttribute('aria-pressed', b === 2); });
+  $('prev').onclick = () => { S.view = addDays(S.view, -7); renderAll(); };
+  $('next').onclick = () => { S.view = addDays(S.view, 7); renderAll(); };
+  $('today').onclick = () => { S.view = weekOf(today0()); renderAll(); };
+
+  const hourOpts = (from, to) => Array.from({ length: to - from + 1 }, (_, i) => from + i).map((h) => `<option value="${h}">${h >= 24 ? '다음날 ' + String(h - 24).padStart(2, '0') : String(h).padStart(2, '0')}:00</option>`).join('');
+  $('s-start').innerHTML = hourOpts(0, 23);
+  $('s-end').innerHTML = hourOpts(1, 30);
+  function fillSettingsForm() { $('s-start').value = S.settings.startH; $('s-end').value = S.settings.endH; }
+  fillSettingsForm();
+
+  $('copy').onclick = async () => {
+    const r = S.lastRuns, up = weekConfs();
+    let txt = `**[${CONFIG.partyName}]**\n`;
+    if (up.length) txt += '📌 확정\n' + up.map((c) => `- ${md(parseKey(c.date))} ${hhmm(c.start)}–${hhmm(c.end)}${c.memo ? ' ' + c.memo : ''}`).join('\n') + '\n';
+    txt += `가능 시간 (${r.nd}/${r.total}명 기준)\n`;
+    txt += r.sure.length ? r.sure.map((x) => `- ${md(x.d)} ${hhmm(x.start)}–${hhmm(x.end)}`).join('\n') : '- 확정으로 다 되는 시간 없음';
+    if (r.soft.length) txt += '\n애매 포함:\n' + r.soft.map((x) => `- ${md(x.d)} ${hhmm(x.start)}–${hhmm(x.end)}`).join('\n');
+    try { await navigator.clipboard.writeText(txt); toast('복사했어요. 디스코드에 붙여넣으세요.'); }
+    catch { toast('복사가 막혔어요. 목록을 직접 선택해서 복사해 주세요.'); }
+  };
+
+  // ---------- storage (Firebase Realtime Database) ----------
+  function setSave(t) { $('save-state').textContent = t; }
+  function showNotice(html) { const n = $('notice'); n.innerHTML = html; n.hidden = false; }
+  const FAIL = '<strong>저장소에 연결하지 못했어요.</strong> Firebase 콘솔의 Realtime Database 규칙과 설정값을 확인해 주세요.';
+
+  function saveMine(slots) {
+    const cutoff = keyOf(addDays(today0(), -14)), kept = {};
+    Object.entries(slots).forEach(([k, v]) => { if (k >= cutoff && v) kept[k] = v; });
+    setSave('저장 중…');
+    S.root.child('grid/m' + S.me).set({ slots: kept, updatedAt: Date.now() })
+      .then(() => setSave('저장됨'), () => { setSave('저장 실패'); showNotice(FAIL); });
+  }
+
+  $('settings-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const startH = +$('s-start').value, endH = +$('s-end').value;
+    if (endH <= startH) { toast('끝 시간은 시작보다 뒤여야 해요.'); return; }
+    if (!S.root) { toast('저장소에 연결되지 않아서 저장할 수 없어요.'); return; }
+    S.root.child('gridSettings').set({ need: +$('s-need').value, startH, endH })
+      .then(() => toast('설정을 저장했어요.'), () => toast('설정 저장에 실패했어요.'));
+  });
+
+  $('title').textContent = CONFIG.partyName + ' 시간표';
+  document.title = CONFIG.partyName + ' 시간표';
+  applyColors();
+  renderAll();
+
+  if (typeof firebase === 'undefined') { showNotice(FAIL); return; }
+  try {
+    firebase.initializeApp(firebaseConfig);
+    S.root = firebase.database().ref('parties/' + CONFIG.partyId);
+  } catch { showNotice(FAIL); return; }
+  const rerender = () => { if (!S.drag) renderAll(); };
+  S.root.child('grid').on('value', (snap) => { S.data = snap.val() || {}; rerender(); }, () => showNotice(FAIL));
+  S.root.child('gridSettings').on('value', (snap) => {
+    const v = snap.val();
+    if (v) { S.settings = { ...S.settings, ...v }; fillSettingsForm(); }
+    rerender();
+  });
+  S.root.child('confirmed').on('value', (snap) => { S.confirmed = snap.val() || {}; rerender(); });
+  S.root.child('themes').on('value', (snap) => {
+    S.themes = snap.val() || {};
+    if (S.me === null) return;
+    const t = S.themes['m' + S.me], bg = (t && t.bg) || null;
+    if (bg !== S.bg) {
+      S.bg = bg;
+      try { bg ? localStorage.setItem(THEME_KEY, JSON.stringify({ bg })) : localStorage.removeItem(THEME_KEY); } catch {}
+      applyColors(); renderColorPickers();
+    }
+  });
+})();
+</script>
+</body>
+</html>
